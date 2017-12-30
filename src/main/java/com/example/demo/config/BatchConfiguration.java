@@ -151,12 +151,14 @@ public class BatchConfiguration {
 
     @Bean
     @StepScope
-    public FlatFileItemWriter<Person> personFileItemWriter(){
+    public FlatFileItemWriter<Person> personFileItemWriter(
+            @Value("#{stepExecutionContext[fromId]}") Integer fromId,
+            @Value("#{stepExecutionContext[toId]}") Integer toId
+    ){
         FlatFileItemWriter<Person> flatFileItemWriter = new FlatFileItemWriter<>();
-        final String fileName = dataFactory.getRandomWord();
         flatFileItemWriter.setResource(new FileSystemResource(new File(
                 "/Users/amarendra/IdeaProjects/batch-demo/result/result"
-                +fileName+".csv")));
+                +fromId+"_"+toId+".csv")));
         flatFileItemWriter.setShouldDeleteIfEmpty(true);
         final DelimitedLineAggregator<Person> lineAggregator = new DelimitedLineAggregator<>();
         lineAggregator.setDelimiter(",");
@@ -180,7 +182,7 @@ public class BatchConfiguration {
 
     // tag::jobstep[]
     //@Bean
-    public Job importUserJob(JobCompletionNotificationListener listener, DataSource dataSource, Step step1) {
+    public Job importUserJob(JobCompletionNotificationListener listener, Step step1) {
         return jobBuilderFactory.get("importUserJob")
                 .incrementer(new RunIdIncrementer())
                 .listener(listener)
@@ -210,12 +212,6 @@ public class BatchConfiguration {
     }
 
     @Bean
-    public Partitioner partitioner(JdbcTemplate jdbcTemplate) {
-        final RangePartitioner rangePartitioner = new RangePartitioner(jdbcTemplate);
-        return rangePartitioner;
-    }
-
-    @Bean
     public Step masterStep(TaskExecutor taskExecutor,
                            Partitioner partitioner,
                            Step step2){
@@ -231,17 +227,24 @@ public class BatchConfiguration {
     @Bean
     public Step step2(PersonReverseItemProcessor reverseProcessor,
                       JdbcPagingItemReader pagingItemReader,
-                      TaskExecutor taskExecutor,
                       FlatFileItemWriter personFileItemWriter) {
         return stepBuilderFactory.get("step2")
                 .<Person, Person> chunk(10)
                 .reader(pagingItemReader)
                 .processor(reverseProcessor)
                 .writer(personFileItemWriter)
-                //.taskExecutor(taskExecutor)
-                //.throttleLimit(10)
                 .build();
     }
+
+    // end::jobstep[]
+
+
+    @Bean
+    public Partitioner partitioner(JdbcTemplate jdbcTemplate) {
+        final RangePartitioner rangePartitioner = new RangePartitioner(jdbcTemplate);
+        return rangePartitioner;
+    }
+
 
     @Bean
     TaskExecutor taskExecutor() {
@@ -249,6 +252,6 @@ public class BatchConfiguration {
         simpleAsyncTaskExecutor.setConcurrencyLimit(10);
         return simpleAsyncTaskExecutor;
     }
-    // end::jobstep[]
+
 
 }
