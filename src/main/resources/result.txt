@@ -3,4 +3,4 @@ Database Cursor Time Taken --> 44321
 Using Pagination Time Taken --> 55935
 Using Pagination 10 Time Taken --> 33280
 Using Pagination 10 + Parallel Time Taken --> 27795
-Using Partitioning and Pagination and Parallel Time Taken --> 14134
+Using Partitioning and Pagination and Parallel Time Taken --> 15432

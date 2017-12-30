@@ -212,7 +212,6 @@ public class BatchConfiguration {
     @Bean
     public Partitioner partitioner(JdbcTemplate jdbcTemplate) {
         final RangePartitioner rangePartitioner = new RangePartitioner(jdbcTemplate);
-        rangePartitioner.partition(10);
         return rangePartitioner;
     }
 
@@ -222,6 +221,7 @@ public class BatchConfiguration {
                            Step step2){
         return stepBuilderFactory.get("masterStep")
                 .partitioner("step2", partitioner)
+                .gridSize(10)
                 .step(step2)
                 .taskExecutor(taskExecutor)
                 .build();
@@ -238,8 +238,8 @@ public class BatchConfiguration {
                 .reader(pagingItemReader)
                 .processor(reverseProcessor)
                 .writer(personFileItemWriter)
-                .taskExecutor(taskExecutor)
-                .throttleLimit(10)
+                //.taskExecutor(taskExecutor)
+                //.throttleLimit(10)
                 .build();
     }
 
