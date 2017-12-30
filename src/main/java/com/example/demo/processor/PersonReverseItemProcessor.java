@@ -16,10 +16,11 @@ public class PersonReverseItemProcessor implements ItemProcessor<Person, Person>
     public Person process(final Person person) throws Exception {
         final String firstName = person.getFirstName().toLowerCase();
         final String lastName = person.getLastName().toLowerCase();
+        final Integer id = person.getId();
 
-        final Person transformedPerson = new Person(firstName, lastName);
+        final Person transformedPerson = new Person(firstName, lastName, id);
 
-        log.info("Converting (" + person + ") into (" + transformedPerson + ")");
+        //log.info("Converting (" + person + ") into (" + transformedPerson + ")");
 
         return transformedPerson;
     }

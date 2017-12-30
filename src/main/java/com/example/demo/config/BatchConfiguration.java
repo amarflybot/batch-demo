@@ -2,16 +2,18 @@ package com.example.demo.config;
 
 import com.example.demo.listener.JobCompletionNotificationListener;
 import com.example.demo.model.Person;
+import com.example.demo.partitioner.RangePartitioner;
 import com.example.demo.processor.PersonItemProcessor;
 import com.example.demo.processor.PersonReverseItemProcessor;
+import org.fluttercode.datafactory.impl.DataFactory;
 import org.springframework.batch.core.Job;
 import org.springframework.batch.core.Step;
 import org.springframework.batch.core.configuration.annotation.EnableBatchProcessing;
 import org.springframework.batch.core.configuration.annotation.JobBuilderFactory;
 import org.springframework.batch.core.configuration.annotation.StepBuilderFactory;
-import org.springframework.batch.core.job.builder.FlowBuilder;
-import org.springframework.batch.core.job.flow.Flow;
+import org.springframework.batch.core.configuration.annotation.StepScope;
 import org.springframework.batch.core.launch.support.RunIdIncrementer;
+import org.springframework.batch.core.partition.support.Partitioner;
 import org.springframework.batch.item.ItemReader;
 import org.springframework.batch.item.ItemWriter;
 import org.springframework.batch.item.database.*;
@@ -24,14 +26,15 @@ import org.springframework.batch.item.file.transform.BeanWrapperFieldExtractor;
 import org.springframework.batch.item.file.transform.DelimitedLineAggregator;
 import org.springframework.batch.item.file.transform.DelimitedLineTokenizer;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.io.ClassPathResource;
 import org.springframework.core.io.FileSystemResource;
-import org.springframework.core.io.Resource;
 import org.springframework.core.task.SimpleAsyncTaskExecutor;
 import org.springframework.core.task.TaskExecutor;
 import org.springframework.jdbc.core.BeanPropertyRowMapper;
+import org.springframework.jdbc.core.JdbcTemplate;
 
 import javax.sql.DataSource;
 import java.io.File;
@@ -56,6 +59,9 @@ public class BatchConfiguration {
     @Autowired
     public DataSource dataSource;
 
+    @Autowired
+    public DataFactory dataFactory;
+
     // tag::readerwriterprocessor[]
     @Bean
     public FlatFileItemReader<Person> reader() {
@@ -73,45 +79,53 @@ public class BatchConfiguration {
     }
 
     @Bean
+    @StepScope
     public ItemReader<Person> databaseItemReader(DataSource dataSource) {
         JdbcCursorItemReader<Person> databaseReader = new JdbcCursorItemReader<>();
 
         databaseReader.setDataSource(dataSource);
-        databaseReader.setSql("SELECT first_name, last_name from people");
+        databaseReader.setSql("SELECT first_name, last_name, id from people");
         databaseReader.setRowMapper(new BeanPropertyRowMapper<Person>(){
             @Override
             public Person mapRow(final ResultSet rs, final int rowNumber) throws SQLException {
-                return new Person(rs.getString(1), rs.getString(2));
+                return new Person(rs.getString(1), rs.getString(2), rs.getInt(3));
             }
         });
         return databaseReader;
     }
 
     @Bean
-    public ItemReader<Person> databasePaginationItemReader(DataSource dataSource) {
-        JdbcPagingItemReader<Person> databaseReader = new JdbcPagingItemReader<>();
+    @StepScope
+    public JdbcPagingItemReader<Person> pagingItemReader(
+            @Value("#{stepExecutionContext[fromId]}") Integer fromId,
+            @Value("#{stepExecutionContext[toId]}") Integer toId,
+            DataSource dataSource) {
+        System.out.println("Execution Context: fromId: "+ fromId);
+        System.out.println("Execution Context: toId: "+ toId);
+        JdbcPagingItemReader<Person> pagingItemReader = new JdbcPagingItemReader<>();
 
-        databaseReader.setDataSource(dataSource);
-        databaseReader.setPageSize(10);
+        pagingItemReader.setDataSource(dataSource);
+        pagingItemReader.setPageSize(10);
 
-        PagingQueryProvider queryProvider = createQueryProvider();
-        databaseReader.setQueryProvider(queryProvider);
+        PagingQueryProvider queryProvider = createQueryProvider(fromId, toId);
+        pagingItemReader.setQueryProvider(queryProvider);
 
-        databaseReader.setRowMapper(new BeanPropertyRowMapper<Person>() {
+        pagingItemReader.setRowMapper(new BeanPropertyRowMapper<Person>() {
             @Override
             public Person mapRow(final ResultSet rs, final int rowNumber) throws SQLException {
-                return new Person(rs.getString(1), rs.getString(2));
+                return new Person(rs.getString(1), rs.getString(2), rs.getInt(3));
             }
         });
 
-        return databaseReader;
+        return pagingItemReader;
     }
 
-    private PagingQueryProvider createQueryProvider() {
+    private PagingQueryProvider createQueryProvider(final Integer fromId, final Integer toId) {
         MySqlPagingQueryProvider queryProvider = new MySqlPagingQueryProvider();
 
         queryProvider.setSelectClause("SELECT first_name, last_name, id");
         queryProvider.setFromClause("FROM people");
+        queryProvider.setWhereClause("WHERE id <= "+toId+" and id >= "+ fromId);
         queryProvider.setSortKeys(sortByIdAsc());
 
         return queryProvider;
@@ -129,20 +143,25 @@ public class BatchConfiguration {
     }
 
     @Bean
+    @StepScope
     public PersonReverseItemProcessor reverseProcessor() {
         return new PersonReverseItemProcessor();
     }
 
 
     @Bean
+    @StepScope
     public FlatFileItemWriter<Person> personFileItemWriter(){
         FlatFileItemWriter<Person> flatFileItemWriter = new FlatFileItemWriter<>();
-        flatFileItemWriter.setResource(new FileSystemResource(new File("/Users/amarendra/sample-data-gen.csv")));
+        final String fileName = dataFactory.getRandomWord();
+        flatFileItemWriter.setResource(new FileSystemResource(new File(
+                "/Users/amarendra/IdeaProjects/batch-demo/result/result"
+                +fileName+".csv")));
         flatFileItemWriter.setShouldDeleteIfEmpty(true);
         final DelimitedLineAggregator<Person> lineAggregator = new DelimitedLineAggregator<>();
         lineAggregator.setDelimiter(",");
         final BeanWrapperFieldExtractor<Person> fieldExtractor = new BeanWrapperFieldExtractor<>();
-        fieldExtractor.setNames(new String[]{"lastName","firstName"});
+        fieldExtractor.setNames(new String[]{"lastName","firstName","id"});
         lineAggregator.setFieldExtractor(fieldExtractor);
         flatFileItemWriter.setLineAggregator(lineAggregator);
 
@@ -150,7 +169,7 @@ public class BatchConfiguration {
     }
 
     @Bean
-    public JdbcBatchItemWriter<Person> writer() {
+    public JdbcBatchItemWriter<Person> writer(DataSource dataSource) {
         JdbcBatchItemWriter<Person> writer = new JdbcBatchItemWriter<>();
         writer.setItemSqlParameterSourceProvider(new BeanPropertyItemSqlParameterSourceProvider<Person>());
         writer.setSql("INSERT INTO people (first_name, last_name) VALUES (:firstName, :lastName)");
@@ -160,34 +179,66 @@ public class BatchConfiguration {
     // end::readerwriterprocessor[]
 
     // tag::jobstep[]
-    @Bean
-    public Job importUserJob(JobCompletionNotificationListener listener, DataSource dataSource) {
+    //@Bean
+    public Job importUserJob(JobCompletionNotificationListener listener, DataSource dataSource, Step step1) {
         return jobBuilderFactory.get("importUserJob")
                 .incrementer(new RunIdIncrementer())
                 .listener(listener)
-                .flow(step2(dataSource))
+                .flow(step1)
                 .end()
                 .build();
     }
 
     @Bean
-    public Step step1() {
-        return stepBuilderFactory.get("step1")
-                .<Person, Person> chunk(10)
-                .reader(reader())
-                .processor(processor())
-                .writer(writer())
+    public Job exportUserJob(JobCompletionNotificationListener listener, Step masterStep) {
+        return jobBuilderFactory.get("exportUserJob")
+                .incrementer(new RunIdIncrementer())
+                .listener(listener)
+                .flow(masterStep)
+                .end()
                 .build();
     }
 
     @Bean
-    public Step step2(DataSource dataSource) {
+    public Step step1(ItemWriter writer) {
+        return stepBuilderFactory.get("step1")
+                .<Person, Person> chunk(10)
+                .reader(reader())
+                .processor(processor())
+                .writer(writer)
+                .build();
+    }
+
+    @Bean
+    public Partitioner partitioner(JdbcTemplate jdbcTemplate) {
+        final RangePartitioner rangePartitioner = new RangePartitioner(jdbcTemplate);
+        rangePartitioner.partition(10);
+        return rangePartitioner;
+    }
+
+    @Bean
+    public Step masterStep(TaskExecutor taskExecutor,
+                           Partitioner partitioner,
+                           Step step2){
+        return stepBuilderFactory.get("masterStep")
+                .partitioner("step2", partitioner)
+                .step(step2)
+                .taskExecutor(taskExecutor)
+                .build();
+
+    }
+
+    @Bean
+    public Step step2(PersonReverseItemProcessor reverseProcessor,
+                      JdbcPagingItemReader pagingItemReader,
+                      TaskExecutor taskExecutor,
+                      FlatFileItemWriter personFileItemWriter) {
         return stepBuilderFactory.get("step2")
                 .<Person, Person> chunk(10)
-                .reader(databasePaginationItemReader(dataSource))
-                .processor(reverseProcessor())
-                .writer(personFileItemWriter())
-                .taskExecutor(taskExecutor())
+                .reader(pagingItemReader)
+                .processor(reverseProcessor)
+                .writer(personFileItemWriter)
+                .taskExecutor(taskExecutor)
                 .throttleLimit(10)
                 .build();
     }

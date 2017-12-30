@@ -7,6 +7,7 @@ public class Person {
 
     private String lastName;
     private String firstName;
+    private Integer id;
 
     public Person() {
     }
@@ -14,6 +15,20 @@ public class Person {
     public Person(String firstName, String lastName) {
         this.firstName = firstName;
         this.lastName = lastName;
+    }
+
+    public Person(final String firstName, final String lastName, final int id) {
+        this.firstName = firstName;
+        this.lastName = lastName;
+        this.id = id;
+    }
+
+    public Integer getId() {
+        return id;
+    }
+
+    public void setId(final Integer id) {
+        this.id = id;
     }
 
     public void setFirstName(String firstName) {

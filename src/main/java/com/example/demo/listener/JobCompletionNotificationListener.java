@@ -42,9 +42,9 @@ public class JobCompletionNotificationListener extends JobExecutionListenerSuppo
                 }
             });
 
-            for (Person person : results) {
+            /*for (Person person : results) {
                 log.info("Found <" + person + "> in the database.");
-            }
+            }*/
 
         }
     }
