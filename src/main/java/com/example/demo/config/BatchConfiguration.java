@@ -6,14 +6,16 @@ import com.example.demo.partitioner.RangePartitioner;
 import com.example.demo.processor.PersonItemProcessor;
 import com.example.demo.processor.PersonReverseItemProcessor;
 import org.fluttercode.datafactory.impl.DataFactory;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.batch.core.Job;
 import org.springframework.batch.core.Step;
-import org.springframework.batch.core.configuration.annotation.EnableBatchProcessing;
-import org.springframework.batch.core.configuration.annotation.JobBuilderFactory;
-import org.springframework.batch.core.configuration.annotation.StepBuilderFactory;
-import org.springframework.batch.core.configuration.annotation.StepScope;
+import org.springframework.batch.core.configuration.BatchConfigurationException;
+import org.springframework.batch.core.configuration.annotation.*;
 import org.springframework.batch.core.launch.support.RunIdIncrementer;
 import org.springframework.batch.core.partition.support.Partitioner;
+import org.springframework.batch.core.repository.JobRepository;
+import org.springframework.batch.core.repository.support.JobRepositoryFactoryBean;
 import org.springframework.batch.item.ItemReader;
 import org.springframework.batch.item.ItemWriter;
 import org.springframework.batch.item.database.*;
@@ -26,15 +28,21 @@ import org.springframework.batch.item.file.transform.BeanWrapperFieldExtractor;
 import org.springframework.batch.item.file.transform.DelimitedLineAggregator;
 import org.springframework.batch.item.file.transform.DelimitedLineTokenizer;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.boot.autoconfigure.jdbc.DataSourceBuilder;
+import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.context.annotation.Primary;
 import org.springframework.core.io.ClassPathResource;
 import org.springframework.core.io.FileSystemResource;
 import org.springframework.core.task.SimpleAsyncTaskExecutor;
 import org.springframework.core.task.TaskExecutor;
 import org.springframework.jdbc.core.BeanPropertyRowMapper;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.jdbc.datasource.DataSourceTransactionManager;
+import org.springframework.jdbc.datasource.SimpleDriverDataSource;
 
 import javax.sql.DataSource;
 import java.io.File;
@@ -50,14 +58,13 @@ import java.util.Map;
 @EnableBatchProcessing
 public class BatchConfiguration {
 
+    public static final Logger log = LoggerFactory.getLogger(BatchConfiguration.class);
+
     @Autowired
     public JobBuilderFactory jobBuilderFactory;
 
     @Autowired
     public StepBuilderFactory stepBuilderFactory;
-
-    @Autowired
-    public DataSource dataSource;
 
     @Autowired
     public DataFactory dataFactory;
@@ -80,10 +87,10 @@ public class BatchConfiguration {
 
     @Bean
     @StepScope
-    public ItemReader<Person> databaseItemReader(DataSource dataSource) {
+    public ItemReader<Person> databaseItemReader(@Qualifier("appDataSource") DataSource appDataSource) {
         JdbcCursorItemReader<Person> databaseReader = new JdbcCursorItemReader<>();
 
-        databaseReader.setDataSource(dataSource);
+        databaseReader.setDataSource(appDataSource);
         databaseReader.setSql("SELECT first_name, last_name, id from people");
         databaseReader.setRowMapper(new BeanPropertyRowMapper<Person>(){
             @Override
@@ -99,12 +106,12 @@ public class BatchConfiguration {
     public JdbcPagingItemReader<Person> pagingItemReader(
             @Value("#{stepExecutionContext[fromId]}") Integer fromId,
             @Value("#{stepExecutionContext[toId]}") Integer toId,
-            DataSource dataSource) {
+            @Qualifier("appDataSource") DataSource appDataSource) {
         System.out.println("Execution Context: fromId: "+ fromId);
         System.out.println("Execution Context: toId: "+ toId);
         JdbcPagingItemReader<Person> pagingItemReader = new JdbcPagingItemReader<>();
 
-        pagingItemReader.setDataSource(dataSource);
+        pagingItemReader.setDataSource(appDataSource);
         pagingItemReader.setPageSize(10);
 
         PagingQueryProvider queryProvider = createQueryProvider(fromId, toId);
@@ -171,11 +178,11 @@ public class BatchConfiguration {
     }
 
     @Bean
-    public JdbcBatchItemWriter<Person> writer(DataSource dataSource) {
+    public JdbcBatchItemWriter<Person> writer(@Qualifier("appDataSource") DataSource appDataSource) {
         JdbcBatchItemWriter<Person> writer = new JdbcBatchItemWriter<>();
         writer.setItemSqlParameterSourceProvider(new BeanPropertyItemSqlParameterSourceProvider<Person>());
         writer.setSql("INSERT INTO people (first_name, last_name) VALUES (:firstName, :lastName)");
-        writer.setDataSource(dataSource);
+        writer.setDataSource(appDataSource);
         return writer;
     }
     // end::readerwriterprocessor[]
@@ -240,8 +247,8 @@ public class BatchConfiguration {
 
 
     @Bean
-    public Partitioner partitioner(JdbcTemplate jdbcTemplate) {
-        final RangePartitioner rangePartitioner = new RangePartitioner(jdbcTemplate);
+    public Partitioner partitioner(@Qualifier("appDataSource") DataSource appDataSource) {
+        final RangePartitioner rangePartitioner = new RangePartitioner(new JdbcTemplate(appDataSource));
         return rangePartitioner;
     }
 
