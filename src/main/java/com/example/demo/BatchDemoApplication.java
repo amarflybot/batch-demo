@@ -4,6 +4,7 @@ import org.fluttercode.datafactory.impl.DataFactory;
 import org.springframework.boot.CommandLineRunner;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
+import org.springframework.cloud.task.configuration.EnableTask;
 import org.springframework.context.annotation.Bean;
 
 import java.io.BufferedWriter;
@@ -12,6 +13,7 @@ import java.io.IOException;
 import java.util.Date;
 
 @SpringBootApplication
+@EnableTask
 public class BatchDemoApplication {
 
 	public static void main(String[] args) {
